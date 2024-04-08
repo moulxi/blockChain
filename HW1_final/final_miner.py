@@ -96,6 +96,7 @@ class BlockChain:
         else:
             transcation_accepted = self.pending_transactions
             self.pending_transactions = []
+        
         block.transactions = transcation_accepted
         
     def mine_block(self, miner):
@@ -108,14 +109,14 @@ class BlockChain:
         new_block.previous_hash = last_block.hash
         new_block.difficulty = self.difficulty
         new_block.hash = self.get_hash(new_block, new_block.nonce)
-
         while new_block.hash[0: self.difficulty] != '0' * self.difficulty:
             new_block.nonce += 1
             new_block.hash = self.get_hash(new_block, new_block.nonce)
-
+        
         time_consumed = round(time.process_time() - start, 5)
-        #print(f"Hash found: {new_block.hash} @ difficulty {self.difficulty}, time cost: {time_consumed}s")
+        print(f"Hash found: {new_block.hash} @ difficulty {self.difficulty}, time cost: {time_consumed}s")
         self.chain.append(new_block)
+
         
     def adjust_difficulty(self):
         if len(self.chain) % self.adjust_difficulty_blocks != 0:
@@ -268,14 +269,20 @@ class BlockChain:
         ## for block in self.chain:
             
         for perBlock in self.chain:
-           for perTransaction in perBlock.transactions:
-               if(account == perTransaction.sender):
-                   print("--------account-sender-match--------")
-                   balance -= perTransaction.amounts
-                   balance -= perTransaction.fee
-               elif(account == perTransaction.receiver):
-                   print("--------account-receiver-match--------")
-                   balance += perTransaction.amounts
+            if(perBlock.miner == account):
+                balance += perBlock.miner_rewards
+
+            for perTransaction in perBlock.transactions:
+                if(account == perTransaction.sender):
+                    #print("--------account-sender-match--------")
+                    balance -= perTransaction.amounts
+                    balance -= perTransaction.fee
+                elif(account == perTransaction.receiver):
+                    #print("--------account-receiver-match--------")
+                    balance += perTransaction.amounts
+                if(perBlock.miner == account):
+                    balance += perTransaction.fee
+            
                 
         # Add the test token that the customer had already applied
         for i in self.address_table:
@@ -343,22 +350,59 @@ class BlockChain:
         print('Address:', address)
         self.address_table.append([address, 0]) # 將 miner 的 address 存入 table
         return address
+
     
+    def sign_transaction(self, transaction, private):
+        private_key = '-----BEGIN RSA PRIVATE KEY-----\n'
+        private_key += private
+        private_key += '\n-----END RSA PRIVATE KEY-----\n'
+        private_key_pkcs = rsa.PrivateKey.load_pkcs1(private_key.encode('utf-8'))
+        transaction_str = self.transaction_to_string(transaction)
+        signature = rsa.sign(transaction_str.encode('utf-8'), private_key_pkcs, 'SHA-1')
+        return signature       
     
     def start(self):
         address, private = self.generate_address()
+        #print("Private_key = ", private, " , type is ", type(private),end="\n\n")
         self.create_genesis_block()
         if True:
             t = threading.Thread(target=self.interrup_control)
             t.start()
 
-            while(self.mining_flag == 1):            
+            while(self.mining_flag == 1 or self.mining_flag == 3):          
+                
+                if(self.mining_flag == 3):
+                    message = {
+                        "request": "transaction"
+                    }
+                    message['address'] = input("Address: ")
+                    message['receiver'] = input("Receiver: ")
+                    message['amount'] = input("Amount: ")
+                    message['comment'] = input("Comment: ") 
+                    new_transaction = self.initialize_transaction(
+                        message["address"], 
+                        message["receiver"],
+                        int(message["amount"]),
+                        int(0),
+                        message["comment"]
+                    )
+                    #signature = self.sign_transaction(new_transaction, private_key)
+                    #message["signature"] = signature
+                        
+                    if type(new_transaction) == type(""):
+                        print("The Transaction is rejected, since balance is not enough.")
+                    else:
+                        self.pending_transactions.append(new_transaction)
+                        print("True")
+                    self.mining_flag = 1
+                    t = threading.Thread(target=self.interrup_control)
+                    t.start()
                 self.mine_block(address)
                 print("balance amount: ",self.get_balance(address))
                 self.adjust_difficulty()
        
     def interrup_control(self):
-        self.mining_flag = int(input("In interrup_control function : input value 0 to interrup current work on mining new block. "))
+        self.mining_flag = int(input("In interrup_control function : \ninput value 0 to interrup current work on mining new block.\ninput value 3 to make a transaction. \n"))
  
                       
 
